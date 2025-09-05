@@ -30,6 +30,8 @@ MatrixSettings SettingsManager::LoadSettings() {
         settings.enable3DEffect = ReadBool(hKey, L"Enable3DEffect", true);
         settings.variableFontSize = ReadBool(hKey, L"VariableFontSize", true);
         settings.maskBackgroundOpacity = ReadFloat(hKey, L"MaskBackgroundOpacity", 0.3f);
+        settings.depthRange = ReadFloat(hKey, L"DepthRange", 5.0f);
+        settings.fadeRate = ReadFloat(hKey, L"FadeRate", 2.0f);
         settings.maskImagePath = ReadString(hKey, L"MaskImagePath", L"");
         settings.useMask = ReadBool(hKey, L"UseMask", false);
         
@@ -73,6 +75,8 @@ void SettingsManager::SaveSettings(const MatrixSettings& settings) {
         WriteBool(hKey, L"Enable3DEffect", settings.enable3DEffect);
         WriteBool(hKey, L"VariableFontSize", settings.variableFontSize);
         WriteFloat(hKey, L"MaskBackgroundOpacity", settings.maskBackgroundOpacity);
+        WriteFloat(hKey, L"DepthRange", settings.depthRange);
+        WriteFloat(hKey, L"FadeRate", settings.fadeRate);
         WriteString(hKey, L"MaskImagePath", settings.maskImagePath);
         WriteBool(hKey, L"UseMask", settings.useMask);
         
