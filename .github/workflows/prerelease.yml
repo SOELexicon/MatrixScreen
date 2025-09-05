@@ -1,0 +1,119 @@
+name: Pre-release Build
+
+on:
+  push:
+    branches: [ develop ]
+  workflow_dispatch:  # Allow manual trigger
+
+permissions:
+  contents: write
+  issues: read
+  pull-requests: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Add MSBuild to PATH
+      uses: microsoft/setup-msbuild@v1.3
+      
+    - name: Setup MSVC
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: x64
+        
+    - name: Configure with CMake
+      run: |
+        mkdir build
+        cd build
+        cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_DISABLE_FIND_PACKAGE_PkgConfig=TRUE
+        
+    - name: Build Release
+      run: |
+        cd build
+        cmake --build . --config Release
+        
+    - name: Get short SHA and timestamp
+      id: vars
+      run: |
+        $shortSha = "${{ github.sha }}".Substring(0, 7)
+        $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss UTC"
+        echo "short_sha=$shortSha" >> $env:GITHUB_OUTPUT
+        echo "timestamp=$timestamp" >> $env:GITHUB_OUTPUT
+        
+    - name: Create prerelease package
+      run: |
+        $timestamp = Get-Date -Format "yyyyMMdd-HHmm"
+        mkdir prerelease-package
+        Copy-Item "build\Release\MatrixScreensaver.exe" "prerelease-package\"
+        Copy-Item "build\MatrixScreensaver.scr" "prerelease-package\"
+        Copy-Item "install.bat" "prerelease-package\"
+        Copy-Item "README.md" "prerelease-package\"
+        if (Test-Path "build\Release\mask.png") { Copy-Item "build\Release\mask.png" "prerelease-package\" }
+        if (Test-Path "build\Release\mask.jpg") { Copy-Item "build\Release\mask.jpg" "prerelease-package\" }
+        
+        # Create version info file
+        @"
+        Matrix Screensaver Pre-release Build
+        
+        Build Date: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss UTC")
+        Commit: ${{ github.sha }}
+        Short SHA: ${{ steps.vars.outputs.short_sha }}
+        Branch: ${{ github.ref_name }}
+        
+        This is a development build. Use stable releases for production.
+        "@ | Out-File -FilePath "prerelease-package\BUILD_INFO.txt" -Encoding UTF8
+        
+        Compress-Archive -Path "prerelease-package\*" -DestinationPath "MatrixScreensaver-dev-${{ steps.vars.outputs.short_sha }}.zip"
+        
+    - name: Upload prerelease artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: MatrixScreensaver-dev-${{ steps.vars.outputs.short_sha }}
+        path: prerelease-package/*
+        retention-days: 14
+        
+    - name: Delete old prereleases
+      uses: dev-drprasad/delete-older-releases@v0.3.2
+      with:
+        keep_latest: 3
+        delete_tag_pattern: dev-*
+        delete_tags: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Create Pre-release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: dev-${{ steps.vars.outputs.short_sha }}
+        name: "Development Build (${{ steps.vars.outputs.short_sha }})"
+        files: |
+          MatrixScreensaver-dev-${{ steps.vars.outputs.short_sha }}.zip
+        body: |
+          ## Matrix Screensaver Development Build
+          
+          **⚠️ This is a pre-release development build - use at your own risk!**
+          
+          - **Commit:** ${{ github.sha }}
+          - **Branch:** ${{ github.ref_name }}
+          - **Build Date:** ${{ steps.vars.outputs.timestamp }}
+          
+          ### Installation
+          1. Download and extract the ZIP file
+          2. Run `install.bat` as Administrator
+          3. Or manually copy `MatrixScreensaver.scr` to `C:\Windows\System32`
+          
+          ### Development Notes
+          - This build contains the latest changes from the develop branch
+          - May contain unstable features or bugs
+          - For stable releases, use tagged versions instead
+          
+          Built automatically from commit ${{ github.sha }}
+        draft: false
+        prerelease: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,101 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # Trigger on version tags like v1.0.0
+  workflow_dispatch:  # Allow manual trigger
+
+permissions:
+  contents: write
+  issues: read
+  pull-requests: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Add MSBuild to PATH
+      uses: microsoft/setup-msbuild@v1.3
+      
+    - name: Setup MSVC
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: x64
+        
+    - name: Configure with CMake
+      run: |
+        mkdir build
+        cd build
+        cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_DISABLE_FIND_PACKAGE_PkgConfig=TRUE
+        
+    - name: Build Release
+      run: |
+        cd build
+        cmake --build . --config Release
+        
+    - name: Copy artifacts
+      run: |
+        cd build
+        if (Test-Path "mask.png") { Copy-Item "mask.png" "Release\" }
+        if (Test-Path "mask.jpg") { Copy-Item "mask.jpg" "Release\" }
+        
+    - name: Create release package
+      run: |
+        mkdir release-package
+        Copy-Item "build\Release\MatrixScreensaver.exe" "release-package\"
+        Copy-Item "build\MatrixScreensaver.scr" "release-package\"
+        Copy-Item "install.bat" "release-package\"
+        Copy-Item "README.md" "release-package\"
+        if (Test-Path "build\Release\mask.png") { Copy-Item "build\Release\mask.png" "release-package\" }
+        if (Test-Path "build\Release\mask.jpg") { Copy-Item "build\Release\mask.jpg" "release-package\" }
+        
+    - name: Create ZIP archive
+      run: |
+        Compress-Archive -Path "release-package\*" -DestinationPath "MatrixScreensaver-${{ github.ref_name }}.zip"
+        
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: MatrixScreensaver-${{ github.ref_name }}
+        path: |
+          release-package/*
+          
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          MatrixScreensaver-${{ github.ref_name }}.zip
+        body: |
+          ## Matrix Screensaver Release ${{ github.ref_name }}
+          
+          ### Installation
+          1. Download and extract the ZIP file
+          2. Run `install.bat` as Administrator
+          3. Or manually copy `MatrixScreensaver.scr` to `C:\Windows\System32`
+          4. Right-click desktop → Personalize → Screen Saver → Select "Matrix Screensaver"
+          
+          ### Features
+          - Authentic Matrix digital rain effect
+          - Hardware-accelerated DirectX 11 rendering
+          - Customizable settings (speed, density, colors, fonts)
+          - Mask image support for 3D depth effects
+          - Sequential character mode for persistent trails
+          - Multiple font options and color customization
+          
+          ### What's included
+          - `MatrixScreensaver.scr` - The screensaver file
+          - `MatrixScreensaver.exe` - Configuration executable
+          - `install.bat` - Automated installer script
+          - `README.md` - Documentation
+          
+          Built with Visual Studio 2022 for Windows x64.
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
