@@ -1,0 +1,62 @@
+name: Continuous Integration
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    strategy:
+      matrix:
+        config: [Debug, Release]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Add MSBuild to PATH
+      uses: microsoft/setup-msbuild@v1.3
+      
+    - name: Setup MSVC
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: x64
+        
+    - name: Configure with CMake
+      run: |
+        mkdir build
+        cd build
+        cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_DISABLE_FIND_PACKAGE_PkgConfig=TRUE
+        
+    - name: Build ${{ matrix.config }}
+      run: |
+        cd build
+        cmake --build . --config ${{ matrix.config }}
+        
+    - name: Verify build artifacts
+      run: |
+        if (!(Test-Path "build\${{ matrix.config }}\MatrixScreensaver.exe")) {
+          Write-Error "MatrixScreensaver.exe not found!"
+          exit 1
+        }
+        if (!(Test-Path "build\MatrixScreensaver.scr")) {
+          Write-Error "MatrixScreensaver.scr not found!"
+          exit 1
+        }
+        Write-Output "Build artifacts verified successfully!"
+        
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      if: matrix.config == 'Release'
+      with:
+        name: MatrixScreensaver-CI-${{ github.sha }}
+        path: |
+          build/Release/MatrixScreensaver.exe
+          build/MatrixScreensaver.scr
+          install.bat
+        retention-days: 30
