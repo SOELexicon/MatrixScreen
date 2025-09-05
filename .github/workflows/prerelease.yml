@@ -5,6 +5,11 @@ on:
     branches: [ develop ]
   workflow_dispatch:  # Allow manual trigger
 
+permissions:
+  contents: write
+  issues: read
+  pull-requests: read
+
 jobs:
   build:
     runs-on: windows-latest
@@ -32,11 +37,13 @@ jobs:
         cd build
         cmake --build . --config Release
         
-    - name: Get short SHA
+    - name: Get short SHA and timestamp
       id: vars
       run: |
         $shortSha = "${{ github.sha }}".Substring(0, 7)
+        $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss UTC"
         echo "short_sha=$shortSha" >> $env:GITHUB_OUTPUT
+        echo "timestamp=$timestamp" >> $env:GITHUB_OUTPUT
         
     - name: Create prerelease package
       run: |
@@ -75,6 +82,7 @@ jobs:
       with:
         keep_latest: 3
         delete_tag_pattern: dev-*
+        delete_tags: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         
@@ -92,7 +100,7 @@ jobs:
           
           - **Commit:** ${{ github.sha }}
           - **Branch:** ${{ github.ref_name }}
-          - **Build Date:** ${{ steps.date.outputs.date }}
+          - **Build Date:** ${{ steps.vars.outputs.timestamp }}
           
           ### Installation
           1. Download and extract the ZIP file
