@@ -1,6 +1,6 @@
 # Matrix Screensaver
 
-![Build Status](https://github.com/yourusername/MatrixScreen/workflows/Continuous%20Integration/badge.svg)
+[![Continuous Integration](https://github.com/SOELexicon/MatrixScreen/actions/workflows/ci.yml/badge.svg)](https://github.com/SOELexicon/MatrixScreen/actions/workflows/ci.yml)
 [![Build and Release](https://github.com/SOELexicon/MatrixScreen/actions/workflows/release.yml/badge.svg)](https://github.com/SOELexicon/MatrixScreen/actions/workflows/release.yml)
 
 A high-performance Matrix digital rain screensaver written in modern C++20 with DirectX 11 hardware acceleration.
