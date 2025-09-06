@@ -11,19 +11,8 @@ if %errorlevel% neq 0 (
     echo Requesting elevation...
     echo.
     
-    REM Try PowerShell method first (more reliable on modern Windows)
+    REM Use PowerShell method (works on all modern Windows)
     powershell -Command "Start-Process cmd -ArgumentList '/c ""%~f0"" %*' -Verb RunAs" 2>nul
-    if %errorlevel% equ 0 (
-        exit /b
-    )
-    
-    REM Fallback to VBScript method if PowerShell fails
-    echo Set UAC = CreateObject^("Shell.Application"^) > "%temp%\getadmin.vbs"
-    echo UAC.ShellExecute "cmd.exe", "/c ""%~f0"" %*", "", "runas", 1 >> "%temp%\getadmin.vbs"
-    
-    "%temp%\getadmin.vbs"
-    del "%temp%\getadmin.vbs"
-    
     exit /b
 )
 
@@ -32,6 +21,26 @@ echo Installing Modern C++ Matrix Screensaver...
 REM Build first if needed
 if not exist "%~dp0build\MatrixScreensaver.scr" (
     echo Screensaver not found. Building first...
+    
+    REM Try to setup VS environment if not already done
+    where cl >nul 2>&1
+    if %errorlevel% neq 0 (
+        echo Setting up Visual Studio environment...
+        
+        REM Try VS 2022 Community first
+        if exist "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\Tools\VsDevCmd.bat" (
+            call "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 >nul 2>&1
+        ) else if exist "C:\Program Files\Microsoft Visual Studio\2022\Professional\Common7\Tools\VsDevCmd.bat" (
+            call "C:\Program Files\Microsoft Visual Studio\2022\Professional\Common7\Tools\VsDevCmd.bat" -arch=x64 >nul 2>&1
+        ) else if exist "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat" (
+            call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat" -arch=x64 >nul 2>&1
+        ) else (
+            echo Visual Studio 2022 not found! Please install Visual Studio 2022 with C++ development tools.
+            pause
+            exit /b 1
+        )
+    )
+    
     call "%~dp0build.bat"
     if %errorlevel% neq 0 (
         echo Build failed!
@@ -41,7 +50,7 @@ if not exist "%~dp0build\MatrixScreensaver.scr" (
 )
 
 REM Copy to System32 as .scr file
-copy "%~dp0build\MatrixScreensaver.scr" "%SystemRoot%\System32\"
+copy "%~dp0build\MatrixScreensaver.scr" "%SystemRoot%\System32\" /Y
 
 if %errorlevel% neq 0 (
     echo Installation failed!
