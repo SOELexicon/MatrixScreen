@@ -1,6 +1,11 @@
 #pragma once
 
 #include "common.h"
+#include "performance_metrics.h"
+#include "batch_renderer.h"
+#include "memory_pool.h"
+#include "dirty_rect_manager.h"
+#include "character_effects.h"
 #include <unordered_map>
 #include <unordered_set>
 #include <array>
@@ -63,6 +68,21 @@ private:
     // Timing
     std::chrono::high_resolution_clock::time_point m_lastUpdate;
     
+    // Performance monitoring
+    std::unique_ptr<PerformanceMetrics> m_performanceMetrics;
+    
+    // Performance optimizations
+    std::unique_ptr<BatchRenderer> m_batchRenderer;
+    std::unique_ptr<MemoryPool<GridCell>> m_gridCellPool;
+    std::unique_ptr<DirtyRectManager> m_dirtyRectManager;
+    
+    // Visual effects
+    std::unique_ptr<CharacterEffects> m_characterEffects;
+    
+    // Frame rate limiting
+    std::chrono::high_resolution_clock::time_point m_lastFrameTime;
+    std::chrono::duration<float, std::milli> m_targetFrameDuration;
+    
     // Private methods
     bool InitializeDirect3D(HWND hwnd);
     bool InitializeDirect2D();
@@ -76,6 +96,7 @@ private:
     float GetMaskBrightness(int x, int y) const; // Get brightness from mask for 3D depth
     void RenderGrid();
     void RenderColumns();
+    void RenderOptimized(); // Optimized rendering with batching and dirty rectangles
     void RenderMaskBackground();
     Color GetMatrixColor() const;
     Color GetDepthColor(float depth, float alpha) const; // Color based on depth

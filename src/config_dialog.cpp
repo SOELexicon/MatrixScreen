@@ -120,6 +120,55 @@ void ConfigDialog::LoadSettingsToDialog(HWND hDlg) {
     
     // Set mask path
     SetDlgItemText(hDlg, IDC_MASK_PATH, m_settings.maskImagePath.c_str());
+    
+    // Performance optimization settings (all OFF by default)
+    CheckDlgButton(hDlg, IDC_ENABLE_BATCH_RENDERING, m_settings.enableBatchRendering ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(hDlg, IDC_ENABLE_FRAME_LIMITING, m_settings.enableFrameRateLimiting ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(hDlg, IDC_ENABLE_ADAPTIVE_VSYNC, m_settings.enableAdaptiveVSync ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(hDlg, IDC_SHOW_PERFORMANCE_METRICS, m_settings.showPerformanceMetrics ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(hDlg, IDC_ENABLE_DIRTY_RECTANGLES, m_settings.enableDirtyRectangles ? BST_CHECKED : BST_UNCHECKED);
+    
+    // Target FPS slider
+    SendDlgItemMessage(hDlg, IDC_TARGET_FPS_SLIDER, TBM_SETRANGE, 0, MAKELPARAM(30, 144));
+    SendDlgItemMessage(hDlg, IDC_TARGET_FPS_SLIDER, TBM_SETPOS, TRUE, static_cast<LPARAM>(m_settings.targetFrameRate));
+    
+    // Advanced features (all OFF by default)
+    CheckDlgButton(hDlg, IDC_ENABLE_LOGGING, m_settings.enableLogging ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(hDlg, IDC_ENABLE_MOTION_BLUR, m_settings.enableMotionBlur ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(hDlg, IDC_ENABLE_PARTICLE_EFFECTS, m_settings.enableParticleEffects ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(hDlg, IDC_ENABLE_AUDIO_VISUALIZATION, m_settings.enableAudioVisualization ? BST_CHECKED : BST_UNCHECKED);
+    
+    // Quality settings (all OFF by default)
+    CheckDlgButton(hDlg, IDC_ENABLE_HIGH_QUALITY_TEXT, m_settings.enableHighQualityText ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(hDlg, IDC_ENABLE_ANTI_ALIASING, m_settings.enableAntiAliasing ? BST_CHECKED : BST_UNCHECKED);
+    
+    // Visual enhancement features (all OFF by default)
+    CheckDlgButton(hDlg, IDC_ENABLE_CHARACTER_MORPHING, m_settings.enableCharacterMorphing ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(hDlg, IDC_ENABLE_PHOSPHOR_GLOW, m_settings.enablePhosphorGlow ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(hDlg, IDC_ENABLE_GLITCH_EFFECTS, m_settings.enableGlitchEffects ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(hDlg, IDC_ENABLE_RAIN_VARIATIONS, m_settings.enableRainVariations ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(hDlg, IDC_ENABLE_SYSTEM_DISRUPTIONS, m_settings.enableSystemDisruptions ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(hDlg, IDC_ENABLE_MOTION_REDUCTION, m_settings.enableMotionReduction ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(hDlg, IDC_ENABLE_CHARACTER_VARIETY, m_settings.enableCharacterVariety ? BST_CHECKED : BST_UNCHECKED);
+    
+    // Enhancement parameter sliders
+    SendDlgItemMessage(hDlg, IDC_MORPH_FREQUENCY_SLIDER, TBM_SETRANGE, 0, MAKELPARAM(1, 50));
+    SendDlgItemMessage(hDlg, IDC_MORPH_FREQUENCY_SLIDER, TBM_SETPOS, TRUE, static_cast<LPARAM>(m_settings.morphFrequency * 100));
+    
+    SendDlgItemMessage(hDlg, IDC_MORPH_SPEED_SLIDER, TBM_SETRANGE, 0, MAKELPARAM(50, 500));
+    SendDlgItemMessage(hDlg, IDC_MORPH_SPEED_SLIDER, TBM_SETPOS, TRUE, static_cast<LPARAM>(m_settings.morphSpeed * 100));
+    
+    SendDlgItemMessage(hDlg, IDC_GLITCH_FREQUENCY_SLIDER, TBM_SETRANGE, 0, MAKELPARAM(1, 20));
+    SendDlgItemMessage(hDlg, IDC_GLITCH_FREQUENCY_SLIDER, TBM_SETPOS, TRUE, static_cast<LPARAM>(m_settings.glitchFrequency * 100));
+    
+    SendDlgItemMessage(hDlg, IDC_GLOW_INTENSITY_SLIDER, TBM_SETRANGE, 0, MAKELPARAM(0, 100));
+    SendDlgItemMessage(hDlg, IDC_GLOW_INTENSITY_SLIDER, TBM_SETPOS, TRUE, static_cast<LPARAM>(m_settings.glowIntensity * 100));
+    
+    SendDlgItemMessage(hDlg, IDC_LATIN_CHAR_PROB_SLIDER, TBM_SETRANGE, 0, MAKELPARAM(0, 50));
+    SendDlgItemMessage(hDlg, IDC_LATIN_CHAR_PROB_SLIDER, TBM_SETPOS, TRUE, static_cast<LPARAM>(m_settings.latinCharProbability * 100));
+    
+    SendDlgItemMessage(hDlg, IDC_SYMBOL_CHAR_PROB_SLIDER, TBM_SETRANGE, 0, MAKELPARAM(0, 20));
+    SendDlgItemMessage(hDlg, IDC_SYMBOL_CHAR_PROB_SLIDER, TBM_SETPOS, TRUE, static_cast<LPARAM>(m_settings.symbolCharProbability * 100));
 }
 
 void ConfigDialog::SaveSettingsFromDialog(HWND hDlg) {
@@ -156,6 +205,43 @@ void ConfigDialog::SaveSettingsFromDialog(HWND hDlg) {
     GetDlgItemText(hDlg, IDC_MASK_PATH, maskPath, _countof(maskPath));
     m_settings.maskImagePath = maskPath;
     m_settings.useMask = !m_settings.maskImagePath.empty();
+    
+    // Performance optimization settings
+    m_settings.enableBatchRendering = IsDlgButtonChecked(hDlg, IDC_ENABLE_BATCH_RENDERING) == BST_CHECKED;
+    m_settings.enableFrameRateLimiting = IsDlgButtonChecked(hDlg, IDC_ENABLE_FRAME_LIMITING) == BST_CHECKED;
+    m_settings.enableAdaptiveVSync = IsDlgButtonChecked(hDlg, IDC_ENABLE_ADAPTIVE_VSYNC) == BST_CHECKED;
+    m_settings.showPerformanceMetrics = IsDlgButtonChecked(hDlg, IDC_SHOW_PERFORMANCE_METRICS) == BST_CHECKED;
+    m_settings.enableDirtyRectangles = IsDlgButtonChecked(hDlg, IDC_ENABLE_DIRTY_RECTANGLES) == BST_CHECKED;
+    
+    // Target FPS
+    m_settings.targetFrameRate = static_cast<int>(SendDlgItemMessage(hDlg, IDC_TARGET_FPS_SLIDER, TBM_GETPOS, 0, 0));
+    
+    // Advanced features
+    m_settings.enableLogging = IsDlgButtonChecked(hDlg, IDC_ENABLE_LOGGING) == BST_CHECKED;
+    m_settings.enableMotionBlur = IsDlgButtonChecked(hDlg, IDC_ENABLE_MOTION_BLUR) == BST_CHECKED;
+    m_settings.enableParticleEffects = IsDlgButtonChecked(hDlg, IDC_ENABLE_PARTICLE_EFFECTS) == BST_CHECKED;
+    m_settings.enableAudioVisualization = IsDlgButtonChecked(hDlg, IDC_ENABLE_AUDIO_VISUALIZATION) == BST_CHECKED;
+    
+    // Quality settings
+    m_settings.enableHighQualityText = IsDlgButtonChecked(hDlg, IDC_ENABLE_HIGH_QUALITY_TEXT) == BST_CHECKED;
+    m_settings.enableAntiAliasing = IsDlgButtonChecked(hDlg, IDC_ENABLE_ANTI_ALIASING) == BST_CHECKED;
+    
+    // Visual enhancement features
+    m_settings.enableCharacterMorphing = IsDlgButtonChecked(hDlg, IDC_ENABLE_CHARACTER_MORPHING) == BST_CHECKED;
+    m_settings.enablePhosphorGlow = IsDlgButtonChecked(hDlg, IDC_ENABLE_PHOSPHOR_GLOW) == BST_CHECKED;
+    m_settings.enableGlitchEffects = IsDlgButtonChecked(hDlg, IDC_ENABLE_GLITCH_EFFECTS) == BST_CHECKED;
+    m_settings.enableRainVariations = IsDlgButtonChecked(hDlg, IDC_ENABLE_RAIN_VARIATIONS) == BST_CHECKED;
+    m_settings.enableSystemDisruptions = IsDlgButtonChecked(hDlg, IDC_ENABLE_SYSTEM_DISRUPTIONS) == BST_CHECKED;
+    m_settings.enableMotionReduction = IsDlgButtonChecked(hDlg, IDC_ENABLE_MOTION_REDUCTION) == BST_CHECKED;
+    m_settings.enableCharacterVariety = IsDlgButtonChecked(hDlg, IDC_ENABLE_CHARACTER_VARIETY) == BST_CHECKED;
+    
+    // Enhancement parameters
+    m_settings.morphFrequency = static_cast<float>(SendDlgItemMessage(hDlg, IDC_MORPH_FREQUENCY_SLIDER, TBM_GETPOS, 0, 0)) / 100.0f;
+    m_settings.morphSpeed = static_cast<float>(SendDlgItemMessage(hDlg, IDC_MORPH_SPEED_SLIDER, TBM_GETPOS, 0, 0)) / 100.0f;
+    m_settings.glitchFrequency = static_cast<float>(SendDlgItemMessage(hDlg, IDC_GLITCH_FREQUENCY_SLIDER, TBM_GETPOS, 0, 0)) / 100.0f;
+    m_settings.glowIntensity = static_cast<float>(SendDlgItemMessage(hDlg, IDC_GLOW_INTENSITY_SLIDER, TBM_GETPOS, 0, 0)) / 100.0f;
+    m_settings.latinCharProbability = static_cast<float>(SendDlgItemMessage(hDlg, IDC_LATIN_CHAR_PROB_SLIDER, TBM_GETPOS, 0, 0)) / 100.0f;
+    m_settings.symbolCharProbability = static_cast<float>(SendDlgItemMessage(hDlg, IDC_SYMBOL_CHAR_PROB_SLIDER, TBM_GETPOS, 0, 0)) / 100.0f;
     
     m_settingsManager->SaveSettings(m_settings);
 }
