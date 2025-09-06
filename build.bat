@@ -4,9 +4,31 @@ echo Building Modern C++ Matrix Screensaver...
 REM Check if Visual Studio is available
 where cl >nul 2>&1
 if %errorlevel% neq 0 (
-    echo Visual Studio command line tools not found. Please run from Developer Command Prompt.
-    pause
-    exit /b 1
+    echo Visual Studio environment not detected. Setting up...
+    
+    REM Try to find and setup VS 2022
+    if exist "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\Tools\VsDevCmd.bat" (
+        call "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 >nul 2>&1
+    ) else if exist "C:\Program Files\Microsoft Visual Studio\2022\Professional\Common7\Tools\VsDevCmd.bat" (
+        call "C:\Program Files\Microsoft Visual Studio\2022\Professional\Common7\Tools\VsDevCmd.bat" -arch=x64 >nul 2>&1
+    ) else if exist "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat" (
+        call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat" -arch=x64 >nul 2>&1
+    ) else (
+        echo Visual Studio 2022 not found!
+        echo Please install Visual Studio 2022 with C++ development tools,
+        echo or run this script from a Developer Command Prompt.
+        pause
+        exit /b 1
+    )
+    
+    REM Check again after setup
+    where cl >nul 2>&1
+    if %errorlevel% neq 0 (
+        echo Failed to setup Visual Studio environment.
+        echo Please run from Developer Command Prompt.
+        pause
+        exit /b 1
+    )
 )
 
 REM Clean previous build completely
