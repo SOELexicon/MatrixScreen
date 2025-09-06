@@ -1,8 +1,17 @@
 #include "matrix_renderer.h"
 #include "mask_loader.h"
+#include "logger.h"
+#include <thread>
+#include <cmath>
 
 MatrixRenderer::MatrixRenderer() 
-    : m_lastUpdate(std::chrono::high_resolution_clock::now()) {
+    : m_lastUpdate(std::chrono::high_resolution_clock::now()),
+      m_lastFrameTime(std::chrono::high_resolution_clock::now()),
+      m_performanceMetrics(std::make_unique<PerformanceMetrics>()),
+      m_batchRenderer(std::make_unique<BatchRenderer>()),
+      m_gridCellPool(std::make_unique<MemoryPool<GridCell>>(2000, 1000)), // Large pool for grid cells
+      m_dirtyRectManager(std::make_unique<DirtyRectManager>()),
+      m_characterEffects(std::make_unique<CharacterEffects>()) {
 }
 
 MatrixRenderer::~MatrixRenderer() {
@@ -11,6 +20,32 @@ MatrixRenderer::~MatrixRenderer() {
 
 bool MatrixRenderer::Initialize(HWND hwnd, const MatrixSettings& settings) {
     m_settings = settings;
+    
+    // Configure performance metrics
+    if (m_performanceMetrics) {
+        m_performanceMetrics->SetEnabled(settings.showPerformanceMetrics);
+    }
+    
+    // Configure performance optimizations
+    if (m_batchRenderer) {
+        m_batchRenderer->SetEnabled(settings.enableBatchRendering);
+        m_batchRenderer->Initialize(1000);
+    }
+    
+    if (m_dirtyRectManager) {
+        m_dirtyRectManager->SetEnabled(settings.enableDirtyRectangles);
+        m_dirtyRectManager->Initialize(m_screenWidth, m_screenHeight, 64);
+    }
+    
+    // Configure character effects
+    if (m_characterEffects) {
+        m_characterEffects->Initialize(settings);
+    }
+    
+    // Set up frame rate limiting
+    if (settings.enableFrameRateLimiting && settings.targetFrameRate > 0) {
+        m_targetFrameDuration = std::chrono::duration<float, std::milli>(1000.0f / settings.targetFrameRate);
+    }
     
     if (!InitializeDirect3D(hwnd)) return false;
     if (!InitializeDirect2D()) return false;
@@ -28,6 +63,9 @@ bool MatrixRenderer::Initialize(HWND hwnd, const MatrixSettings& settings) {
 void MatrixRenderer::Shutdown() {
     m_columns.clear();
     m_densityMap.clear();
+    m_sparseGrid.clear();
+    m_activeCells.clear();
+    m_activeCellSet.clear();
 }
 
 bool MatrixRenderer::InitializeDirect3D(HWND hwnd) {
@@ -136,6 +174,9 @@ bool MatrixRenderer::InitializeDirectWrite() {
     m_textFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
     m_textFormat->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
     
+    // Initialize font cache for performance
+    InitializeFontCache();
+    
     return true;
 }
 
@@ -185,19 +226,15 @@ void MatrixRenderer::InitializeGrid() {
     m_gridWidth = std::max(1, m_screenWidth / cellWidth);
     m_gridHeight = std::max(1, m_screenHeight / cellHeight);
     
-    m_grid.clear();
-    m_grid.resize(m_gridWidth, std::vector<GridCell>(m_gridHeight));
+    // Clear optimized sparse storage
+    m_sparseGrid.clear();
+    m_activeCells.clear();
+    m_activeCellSet.clear();
     
-    // Initialize all grid cells
-    for (int x = 0; x < m_gridWidth; ++x) {
-        for (int y = 0; y < m_gridHeight; ++y) {
-            m_grid[x][y].character = L"";
-            m_grid[x][y].alpha = 0.0f;
-            m_grid[x][y].fontSize = m_settings.fontSize;
-            m_grid[x][y].depth = 0.5f;
-            m_grid[x][y].isActive = false;
-        }
-    }
+    // Reserve space for typical active cell count (about 10% of full grid)
+    size_t estimatedActiveCells = (m_gridWidth * m_gridHeight) / 10;
+    m_activeCells.reserve(estimatedActiveCells);
+    m_sparseGrid.reserve(estimatedActiveCells);
 }
 
 void MatrixRenderer::LoadMask(const std::wstring& imagePath) {
@@ -245,7 +282,8 @@ void MatrixRenderer::CreateDensityMap() {
 }
 
 Color MatrixRenderer::GetMatrixColor() const {
-    return Color::FromHSV(m_settings.hue / 360.0f, 1.0f, 1.0f);
+    // Base matrix color with configurable hue
+    return Color::FromHSV(m_settings.hue, 0.8f, 0.9f, 1.0f);
 }
 
 float MatrixRenderer::GetMaskBrightness(int x, int y) const {
@@ -275,24 +313,27 @@ float MatrixRenderer::GetMaskBrightness(int x, int y) const {
 }
 
 Color MatrixRenderer::GetDepthColor(float depth, float alpha) const {
-    // Create more classic Matrix colors with proper head/trail variation
+    // Create color based on depth (3D effect) and alpha using configurable hue
+    Color baseColor = GetMatrixColor();
     
-    if (alpha > 0.9f) {
-        // Head characters - bright white/green
+    // Special handling for head characters (very bright alpha)
+    if (m_settings.whiteHeadCharacters && alpha > 0.95f) {
+        // Head characters get white/bright tint
         return Color(0.8f, 1.0f, 0.8f, alpha);
-    } else if (depth > 0.7f) {
-        // Mask areas - bright green  
-        float intensity = 0.6f + 0.4f * alpha;
-        return Color(0.0f, intensity, 0.0f, alpha);
-    } else if (depth > 0.4f) {
-        // Transition areas - medium green
-        float intensity = 0.4f + 0.3f * alpha;
-        return Color(0.0f, intensity, 0.0f, alpha);
-    } else {
-        // Outside/background areas - dark green
-        float intensity = 0.2f + 0.3f * alpha;
-        return Color(0.0f, intensity, 0.0f, alpha);
     }
+    
+    // Apply 3D depth effect if enabled
+    if (m_settings.enable3DEffect) {
+        // Closer objects (higher depth) are brighter
+        float brightness = 0.3f + (depth * 0.7f);
+        baseColor.r *= brightness;
+        baseColor.g *= brightness; 
+        baseColor.b *= brightness;
+    }
+    
+    // Apply alpha and return
+    baseColor.a = alpha;
+    return baseColor;
 }
 
 float MatrixRenderer::GetDensityAt(int x, int y) const {
@@ -306,15 +347,32 @@ float MatrixRenderer::GetDensityAt(int x, int y) const {
 }
 
 void MatrixRenderer::Update(float deltaTime) {
+    // Update character effects system
+    if (m_characterEffects) {
+        m_characterEffects->Update(deltaTime);
+    }
+    
     UpdateColumns(deltaTime);
 }
 
 void MatrixRenderer::UpdateColumns(float deltaTime) {
     std::uniform_int_distribution<int> charDist(0, static_cast<int>(MATRIX_CHARS.size()) - 1);
     
+    // Get rain intensity multiplier for dynamic rain effects
+    float rainIntensity = 1.0f;
+    if (m_characterEffects) {
+        rainIntensity = m_characterEffects->GetRainIntensityMultiplier();
+    }
+    
     for (auto& column : m_columns) {
+        // Apply rain intensity variation to speed (reduced motion consideration)
+        float speedMultiplier = rainIntensity;
+        if (m_settings.enableMotionReduction) {
+            speedMultiplier *= 0.7f; // Slower movement for reduced motion
+        }
+        
         // Move column head down
-        column.y += column.currentSpeed * deltaTime * 60.0f;
+        column.y += column.currentSpeed * speedMultiplier * deltaTime * 60.0f;
         
         // Calculate grid position
         int gridX = static_cast<int>(column.x / (m_settings.fontSize * 0.8f));
@@ -322,7 +380,7 @@ void MatrixRenderer::UpdateColumns(float deltaTime) {
         
         // Check if head is in valid grid bounds
         if (gridX >= 0 && gridX < m_gridWidth && gridY >= 0 && gridY < m_gridHeight) {
-            GridCell& cell = m_grid[gridX][gridY];
+            GridCell& cell = GetCell(gridX, gridY);
             
             // Only create new character if cell is empty or very faded
             if (!cell.isActive || cell.alpha < 0.1f) {
@@ -344,8 +402,11 @@ void MatrixRenderer::UpdateColumns(float deltaTime) {
                         int charIndex = std::uniform_int_distribution<int>(0, static_cast<int>(m_settings.customWord.length()) - 1)(g_rng);
                         cell.character = m_settings.customWord.substr(charIndex, 1);
                     }
+                } else if (m_characterEffects) {
+                    // Use enhanced character selection with variety and depth-based weighting
+                    cell.character = m_characterEffects->SelectCharacter(depth, m_settings.enableCharacterVariety);
                 } else {
-                    // Always use random Japanese characters when not using custom word
+                    // Fallback to basic character selection
                     cell.character = MATRIX_CHARS[charDist(g_rng)];
                 }
                 
@@ -353,6 +414,9 @@ void MatrixRenderer::UpdateColumns(float deltaTime) {
                 cell.fontSize = m_settings.fontSize * (0.7f + depth * 0.6f); // Depth-based size
                 cell.depth = depth;
                 cell.isActive = true;
+                
+                // Add to active tracking
+                SetCellActive(gridX, gridY, cell);
             }
         }
         
@@ -372,28 +436,85 @@ void MatrixRenderer::UpdateColumns(float deltaTime) {
 }
 
 void MatrixRenderer::UpdateGrid(float deltaTime) {
-    for (int x = 0; x < m_gridWidth; ++x) {
-        for (int y = 0; y < m_gridHeight; ++y) {
-            GridCell& cell = m_grid[x][y];
+    // Only update active cells for massive performance gain
+    auto it = m_activeCells.begin();
+    while (it != m_activeCells.end()) {
+        auto [x, y] = *it;
+        uint64_t key = PackCoords(x, y);
+        
+        auto cellIt = m_sparseGrid.find(key);
+        if (cellIt == m_sparseGrid.end()) {
+            // Cell no longer exists, remove from active list
+            m_activeCellSet.erase(key);
+            it = m_activeCells.erase(it);
+            continue;
+        }
+        
+        GridCell& cell = cellIt->second;
+        
+        // Update character effects
+        if (m_characterEffects) {
+            // Start morphing occasionally
+            m_characterEffects->StartMorphing(cell, m_settings.morphFrequency * deltaTime);
+            m_characterEffects->UpdateMorphing(cell, deltaTime);
             
-            if (cell.isActive) {
-                // Fade the character over time
-                float fadeRate = m_settings.fadeRate;
-                cell.alpha -= fadeRate * deltaTime;
-                
-                // Deactivate when fully faded
-                if (cell.alpha <= 0.0f) {
-                    cell.alpha = 0.0f;
-                    cell.isActive = false;
-                    cell.character = L"";
-                }
-            }
+            // Start glitches occasionally
+            m_characterEffects->StartGlitch(cell, m_settings.glitchFrequency * deltaTime);
+            m_characterEffects->UpdateGlitch(cell, deltaTime);
+            
+            // Update phosphor glow
+            m_characterEffects->UpdateGlow(cell, deltaTime);
+        }
+        
+        // Update last update time for effects
+        cell.lastUpdateTime += deltaTime;
+        
+        // Fade the character over time (adjusted by motion reduction setting)
+        float fadeRate = m_settings.fadeRate;
+        if (m_settings.enableMotionReduction) {
+            fadeRate *= 0.5f; // Slower fading for reduced motion
+        }
+        cell.alpha -= fadeRate * deltaTime;
+        
+        // Deactivate when fully faded
+        if (cell.alpha <= 0.0f) {
+            cell.alpha = 0.0f;
+            cell.isActive = false;
+            cell.character = L"";
+            
+            // Remove from active tracking
+            m_activeCellSet.erase(key);
+            it = m_activeCells.erase(it);
+            
+            // Remove from sparse grid to save memory
+            m_sparseGrid.erase(cellIt);
+        } else {
+            ++it;
         }
     }
 }
 
 
 void MatrixRenderer::Render() {
+    // Start performance tracking
+    if (m_performanceMetrics) {
+        m_performanceMetrics->StartFrame();
+    }
+    
+    // Frame rate limiting
+    if (m_settings.enableFrameRateLimiting && m_settings.targetFrameRate > 0) {
+        auto now = std::chrono::high_resolution_clock::now();
+        auto timeSinceLastFrame = std::chrono::duration<float, std::milli>(now - m_lastFrameTime);
+        
+        if (timeSinceLastFrame < m_targetFrameDuration) {
+            // Sleep to maintain target frame rate
+            auto sleepTime = m_targetFrameDuration - timeSinceLastFrame;
+            std::this_thread::sleep_for(sleepTime);
+        }
+        
+        m_lastFrameTime = std::chrono::high_resolution_clock::now();
+    }
+    
     // Clear background
     float clearColor[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
     m_deviceContext->ClearRenderTargetView(m_renderTargetView.Get(), clearColor);
@@ -406,8 +527,19 @@ void MatrixRenderer::Render() {
         RenderMaskBackground();
     }
     
-    RenderGrid();
-    RenderColumns();
+    // Use optimized rendering if enabled
+    if (m_settings.enableBatchRendering || m_settings.enableDirtyRectangles) {
+        RenderOptimized();
+    } else {
+        // Standard rendering
+        RenderGrid();
+        RenderColumns();
+    }
+    
+    // Render performance metrics overlay
+    if (m_performanceMetrics && m_settings.showPerformanceMetrics) {
+        m_performanceMetrics->Render(m_d2dRenderTarget.Get(), m_writeFactory.Get());
+    }
     
     HRESULT hr = m_d2dRenderTarget->EndDraw();
     if (hr == D2DERR_RECREATE_TARGET) {
@@ -415,69 +547,69 @@ void MatrixRenderer::Render() {
         InitializeDirect2D();
     }
     
-    m_swapChain->Present(1, 0);
+    // Use adaptive VSync if enabled
+    UINT syncInterval = 1;
+    if (m_settings.enableAdaptiveVSync) {
+        // Adaptive VSync - tear if running behind
+        syncInterval = 0;
+    }
+    
+    m_swapChain->Present(syncInterval, 0);
+    
+    // End performance tracking
+    if (m_performanceMetrics) {
+        m_performanceMetrics->EndFrame();
+    }
 }
 
 void MatrixRenderer::RenderGrid() {
-    for (int x = 0; x < m_gridWidth; ++x) {
-        for (int y = 0; y < m_gridHeight; ++y) {
-            const GridCell& cell = m_grid[x][y];
-            
-            if (!cell.isActive || cell.alpha < 0.05f || cell.character.empty()) {
-                continue; // Skip inactive or transparent cells
-            }
-            
-            // Calculate screen position
-            float screenX = static_cast<float>(x) * m_settings.fontSize * 0.8f;
-            float screenY = static_cast<float>(y) * m_settings.fontSize * 0.9f;
-            
-            if (screenX < -50 || screenX > m_screenWidth + 50 || 
-                screenY < -50 || screenY > m_screenHeight + 50) {
-                continue; // Skip off-screen cells
-            }
-            
-            // Get color based on depth and alpha
-            Color color = GetDepthColor(cell.depth, cell.alpha);
-            m_fadeBrush->SetColor(color.ToD2D1());
-            
-            // Create layout rect
-            D2D1_RECT_F layoutRect = D2D1::RectF(
-                screenX - cell.fontSize * 0.5f, screenY,
-                screenX + cell.fontSize * 0.5f, screenY + cell.fontSize);
-            
-            // Use dynamic text format if font size differs significantly
-            if (std::abs(cell.fontSize - m_settings.fontSize) > 1.0f) {
-                Microsoft::WRL::ComPtr<IDWriteTextFormat> dynamicFormat;
-                HRESULT hr = m_writeFactory->CreateTextFormat(
-                    m_settings.fontName.c_str(),
-                    nullptr,
-                    m_settings.boldFont ? DWRITE_FONT_WEIGHT_BOLD : DWRITE_FONT_WEIGHT_NORMAL,
-                    DWRITE_FONT_STYLE_NORMAL,
-                    DWRITE_FONT_STRETCH_NORMAL,
-                    cell.fontSize,
-                    L"",
-                    &dynamicFormat);
-                
-                if (SUCCEEDED(hr)) {
-                    dynamicFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-                    dynamicFormat->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-                    
-                    m_d2dRenderTarget->DrawText(
-                        cell.character.c_str(),
-                        static_cast<UINT32>(cell.character.length()),
-                        dynamicFormat.Get(),
-                        layoutRect,
-                        m_fadeBrush.Get());
-                }
-            } else {
-                // Use default format
-                m_d2dRenderTarget->DrawText(
-                    cell.character.c_str(),
-                    static_cast<UINT32>(cell.character.length()),
-                    m_textFormat.Get(),
-                    layoutRect,
-                    m_fadeBrush.Get());
-            }
+    // Only render active cells - massive performance improvement!
+    for (const auto& [x, y] : m_activeCells) {
+        uint64_t key = PackCoords(x, y);
+        auto it = m_sparseGrid.find(key);
+        if (it == m_sparseGrid.end()) continue;
+        
+        const GridCell& cell = it->second;
+        
+        if (!cell.isActive || cell.alpha < 0.05f || cell.character.empty()) {
+            continue; // Skip inactive or transparent cells
+        }
+        
+        // Calculate screen position
+        float screenX = static_cast<float>(x) * m_settings.fontSize * 0.8f;
+        float screenY = static_cast<float>(y) * m_settings.fontSize * 0.9f;
+        
+        if (screenX < -50 || screenX > m_screenWidth + 50 || 
+            screenY < -50 || screenY > m_screenHeight + 50) {
+            continue; // Skip off-screen cells
+        }
+        
+        // Get color based on depth and alpha
+        Color color = GetDepthColor(cell.depth, cell.alpha);
+        m_fadeBrush->SetColor(color.ToD2D1());
+        
+        // Create layout rect
+        D2D1_RECT_F layoutRect = D2D1::RectF(
+            screenX - cell.fontSize * 0.5f, screenY,
+            screenX + cell.fontSize * 0.5f, screenY + cell.fontSize);
+        
+        // Use cached font format for performance
+        IDWriteTextFormat* format = GetCachedFormat(cell.fontSize);
+        if (format) {
+            m_d2dRenderTarget->DrawText(
+                cell.character.c_str(),
+                static_cast<UINT32>(cell.character.length()),
+                format,
+                layoutRect,
+                m_fadeBrush.Get());
+        } else {
+            // Fallback to default format if cache miss
+            m_d2dRenderTarget->DrawText(
+                cell.character.c_str(),
+                static_cast<UINT32>(cell.character.length()),
+                m_textFormat.Get(),
+                layoutRect,
+                m_fadeBrush.Get());
         }
     }
 }
@@ -526,6 +658,141 @@ void MatrixRenderer::RenderColumns() {
             m_textFormat.Get(),
             layoutRect,
             m_whiteBrush.Get());
+    }
+}
+
+void MatrixRenderer::RenderOptimized() {
+    // Reset batch renderer for new frame
+    if (m_batchRenderer && m_settings.enableBatchRendering) {
+        m_batchRenderer->Reset();
+    }
+    
+    // Update dirty rectangles if needed
+    if (m_dirtyRectManager && m_settings.enableDirtyRectangles) {
+        // Mark areas where columns are as dirty
+        for (const auto& column : m_columns) {
+            if (column.y >= -50 && column.y <= m_screenHeight + 50) {
+                D2D1_RECT_F columnRect = D2D1::RectF(
+                    column.x - column.baseFontSize,
+                    column.y - column.baseFontSize,
+                    column.x + column.baseFontSize,
+                    column.y + column.baseFontSize);
+                m_dirtyRectManager->MarkDirty(columnRect);
+            }
+        }
+    }
+    
+    // Render grid cells (using batch renderer if enabled)
+    size_t cellsRendered = 0;
+    for (const auto& [x, y] : m_activeCells) {
+        uint64_t key = PackCoords(x, y);
+        auto it = m_sparseGrid.find(key);
+        if (it == m_sparseGrid.end()) continue;
+        
+        const GridCell& cell = it->second;
+        
+        if (!cell.isActive || cell.alpha < 0.05f || cell.character.empty()) {
+            continue;
+        }
+        
+        // Calculate screen position
+        float screenX = static_cast<float>(x) * m_settings.fontSize * 0.8f;
+        float screenY = static_cast<float>(y) * m_settings.fontSize * 0.9f;
+        
+        if (screenX < -50 || screenX > m_screenWidth + 50 || 
+            screenY < -50 || screenY > m_screenHeight + 50) {
+            continue;
+        }
+        
+        // Check if this cell is in a dirty region (if dirty rect optimization is enabled)
+        D2D1_RECT_F cellRect = D2D1::RectF(
+            screenX - cell.fontSize * 0.5f, screenY,
+            screenX + cell.fontSize * 0.5f, screenY + cell.fontSize);
+            
+        if (m_dirtyRectManager && m_settings.enableDirtyRectangles) {
+            if (!m_dirtyRectManager->IsRectDirty(cellRect)) {
+                continue; // Skip non-dirty cells
+            }
+        }
+        
+        // Get the final character to display (considering morphing and glitching)
+        std::wstring displayChar = cell.character;
+        if (m_characterEffects) {
+            displayChar = m_characterEffects->GetGlitchedCharacter(cell);
+        }
+        
+        // Get color based on depth and alpha
+        Color color = GetDepthColor(cell.depth, cell.alpha);
+        
+        // Add system disruption effects
+        if (m_characterEffects && m_characterEffects->IsSystemDisrupted()) {
+            float disruptionIntensity = m_characterEffects->GetSystemDisruptionIntensity();
+            // Flicker effect during system disruption
+            if (static_cast<int>(cell.lastUpdateTime * 30.0f * disruptionIntensity) % 3 == 0) {
+                color.a *= 0.3f; // Make characters flicker
+            }
+            // Add slight red tint during disruption
+            color.r += disruptionIntensity * 0.2f;
+        }
+        
+        if (m_batchRenderer && m_settings.enableBatchRendering) {
+            // Add to batch renderer
+            m_batchRenderer->AddCharacter(displayChar, cellRect, color.ToD2D1(), cell.fontSize);
+        } else {
+            // Immediate rendering with glow effect
+            if (m_settings.enablePhosphorGlow && cell.glowIntensity > 0.0f) {
+                // Render glow first (slightly larger and more transparent)
+                Color glowColor = m_characterEffects ? m_characterEffects->GetGlowColor(cell) : Color(0.0f, 1.0f, 0.0f, cell.glowIntensity * 0.5f);
+                glowColor.a *= 0.5f;
+                
+                D2D1_RECT_F glowRect = D2D1::RectF(
+                    cellRect.left - 2, cellRect.top - 2,
+                    cellRect.right + 2, cellRect.bottom + 2);
+                    
+                m_fadeBrush->SetColor(glowColor.ToD2D1());
+                IDWriteTextFormat* format = GetCachedFormat(cell.fontSize * 1.1f);
+                if (format) {
+                    m_d2dRenderTarget->DrawText(
+                        displayChar.c_str(),
+                        static_cast<UINT32>(displayChar.length()),
+                        format,
+                        glowRect,
+                        m_fadeBrush.Get());
+                }
+            }
+            
+            // Render main character
+            m_fadeBrush->SetColor(color.ToD2D1());
+            IDWriteTextFormat* format = GetCachedFormat(cell.fontSize);
+            if (format) {
+                m_d2dRenderTarget->DrawText(
+                    displayChar.c_str(),
+                    static_cast<UINT32>(displayChar.length()),
+                    format,
+                    cellRect,
+                    m_fadeBrush.Get());
+            }
+        }
+        
+        cellsRendered++;
+    }
+    
+    // Flush batch renderer
+    if (m_batchRenderer && m_settings.enableBatchRendering) {
+        m_batchRenderer->Flush(m_d2dRenderTarget.Get(), m_writeFactory.Get(), m_textFormat.Get());
+    }
+    
+    // Render columns (always immediate rendering for heads)
+    RenderColumns();
+    
+    // Clear dirty flags for next frame
+    if (m_dirtyRectManager && m_settings.enableDirtyRectangles) {
+        m_dirtyRectManager->ClearDirtyFlags();
+    }
+    
+    // Log performance info (optional)
+    if (m_settings.enableLogging && cellsRendered > 0) {
+        Logger::Instance().Debug("Rendered " + std::to_string(cellsRendered) + " cells using optimized path");
     }
 }
 
@@ -580,6 +847,16 @@ void MatrixRenderer::Resize(int width, int height) {
 void MatrixRenderer::UpdateSettings(const MatrixSettings& settings) {
     m_settings = settings;
     
+    // Update performance metrics
+    if (m_performanceMetrics) {
+        m_performanceMetrics->SetEnabled(settings.showPerformanceMetrics);
+    }
+    
+    // Update frame rate limiting
+    if (settings.enableFrameRateLimiting && settings.targetFrameRate > 0) {
+        m_targetFrameDuration = std::chrono::duration<float, std::milli>(1000.0f / settings.targetFrameRate);
+    }
+    
     // Recreate text format if font changed
     if (m_textFormat) {
         m_textFormat.Reset();
@@ -592,5 +869,106 @@ void MatrixRenderer::UpdateSettings(const MatrixSettings& settings) {
         m_greenBrush->SetColor(matrixColor.ToD2D1());
     }
     
+    // Update character effects settings
+    if (m_characterEffects) {
+        m_characterEffects->SetSettings(settings);
+    }
+    
     InitializeColumns();
 }
+
+// Optimization helper implementations
+void MatrixRenderer::InitializeFontCache() {
+    // Pre-create font formats for common sizes
+    for (size_t i = 0; i < FONT_CACHE_SIZE; ++i) {
+        HRESULT hr = m_writeFactory->CreateTextFormat(
+            m_settings.fontName.c_str(),
+            nullptr,
+            m_settings.boldFont ? DWRITE_FONT_WEIGHT_BOLD : DWRITE_FONT_WEIGHT_NORMAL,
+            DWRITE_FONT_STYLE_NORMAL,
+            DWRITE_FONT_STRETCH_NORMAL,
+            m_formatSizes[i],
+            L"",
+            &m_cachedFormats[i]);
+        
+        if (SUCCEEDED(hr)) {
+            m_cachedFormats[i]->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+            m_cachedFormats[i]->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+        }
+    }
+}
+
+IDWriteTextFormat* MatrixRenderer::GetCachedFormat(float fontSize) {
+    // Find the closest cached format
+    auto it = std::lower_bound(m_formatSizes.begin(), m_formatSizes.end(), fontSize);
+    
+    // If exact match or very close, use it
+    if (it != m_formatSizes.end()) {
+        size_t index = std::distance(m_formatSizes.begin(), it);
+        if (index < FONT_CACHE_SIZE && m_cachedFormats[index]) {
+            return m_cachedFormats[index].Get();
+        }
+    }
+    
+    // If fontSize is larger than all cached sizes, use the largest
+    if (fontSize > m_formatSizes.back() && m_cachedFormats[FONT_CACHE_SIZE - 1]) {
+        return m_cachedFormats[FONT_CACHE_SIZE - 1].Get();
+    }
+    
+    // If fontSize is smaller than all cached sizes, use the smallest
+    if (fontSize < m_formatSizes[0] && m_cachedFormats[0]) {
+        return m_cachedFormats[0].Get();
+    }
+    
+    // Find closest match
+    size_t closestIndex = 0;
+    float minDiff = std::abs(fontSize - m_formatSizes[0]);
+    for (size_t i = 1; i < FONT_CACHE_SIZE; ++i) {
+        float diff = std::abs(fontSize - m_formatSizes[i]);
+        if (diff < minDiff) {
+            minDiff = diff;
+            closestIndex = i;
+        }
+    }
+    
+    return m_cachedFormats[closestIndex] ? m_cachedFormats[closestIndex].Get() : nullptr;
+}
+
+GridCell& MatrixRenderer::GetCell(int x, int y) {
+    uint64_t key = PackCoords(x, y);
+    return m_sparseGrid[key];
+}
+
+bool MatrixRenderer::HasActiveCell(int x, int y) const {
+    uint64_t key = PackCoords(x, y);
+    auto it = m_sparseGrid.find(key);
+    return it != m_sparseGrid.end() && it->second.isActive;
+}
+
+void MatrixRenderer::SetCellActive(int x, int y, const GridCell& cell) {
+    uint64_t key = PackCoords(x, y);
+    m_sparseGrid[key] = cell;
+    
+    // Add to active tracking if not already present
+    if (m_activeCellSet.find(key) == m_activeCellSet.end()) {
+        m_activeCellSet.insert(key);
+        m_activeCells.push_back({x, y});
+    }
+}
+
+void MatrixRenderer::DeactivateCell(int x, int y) {
+    uint64_t key = PackCoords(x, y);
+    
+    // Remove from active tracking
+    m_activeCellSet.erase(key);
+    
+    // Remove from active cells list
+    auto it = std::find(m_activeCells.begin(), m_activeCells.end(), std::make_pair(x, y));
+    if (it != m_activeCells.end()) {
+        m_activeCells.erase(it);
+    }
+    
+    // Remove from sparse grid
+    m_sparseGrid.erase(key);
+}
+

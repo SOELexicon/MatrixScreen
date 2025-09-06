@@ -35,6 +35,41 @@ MatrixSettings SettingsManager::LoadSettings() {
         settings.maskImagePath = ReadString(hKey, L"MaskImagePath", L"");
         settings.useMask = ReadBool(hKey, L"UseMask", false);
         
+        // Performance optimization features (default OFF)
+        settings.enableBatchRendering = ReadBool(hKey, L"EnableBatchRendering", false);
+        settings.enableFrameRateLimiting = ReadBool(hKey, L"EnableFrameRateLimiting", false);
+        settings.targetFrameRate = static_cast<int>(ReadDword(hKey, L"TargetFrameRate", 60));
+        settings.enableAdaptiveVSync = ReadBool(hKey, L"EnableAdaptiveVSync", false);
+        settings.showPerformanceMetrics = ReadBool(hKey, L"ShowPerformanceMetrics", false);
+        settings.enableDirtyRectangles = ReadBool(hKey, L"EnableDirtyRectangles", false);
+        
+        // Advanced features (default OFF)
+        settings.enableLogging = ReadBool(hKey, L"EnableLogging", false);
+        settings.enableMotionBlur = ReadBool(hKey, L"EnableMotionBlur", false);
+        settings.enableParticleEffects = ReadBool(hKey, L"EnableParticleEffects", false);
+        settings.enableAudioVisualization = ReadBool(hKey, L"EnableAudioVisualization", false);
+        
+        // Quality settings (default OFF)
+        settings.enableHighQualityText = ReadBool(hKey, L"EnableHighQualityText", false);
+        settings.enableAntiAliasing = ReadBool(hKey, L"EnableAntiAliasing", false);
+        
+        // Visual enhancement features (some enabled by default for better user experience)
+        settings.enableCharacterMorphing = ReadBool(hKey, L"EnableCharacterMorphing", true);
+        settings.enablePhosphorGlow = ReadBool(hKey, L"EnablePhosphorGlow", true);
+        settings.enableGlitchEffects = ReadBool(hKey, L"EnableGlitchEffects", false);
+        settings.enableRainVariations = ReadBool(hKey, L"EnableRainVariations", true);
+        settings.enableSystemDisruptions = ReadBool(hKey, L"EnableSystemDisruptions", false);
+        settings.enableMotionReduction = ReadBool(hKey, L"EnableMotionReduction", false);
+        
+        // Enhancement parameters
+        settings.morphFrequency = ReadFloat(hKey, L"MorphFrequency", 0.1f);
+        settings.morphSpeed = ReadFloat(hKey, L"MorphSpeed", 2.0f);
+        settings.glitchFrequency = ReadFloat(hKey, L"GlitchFrequency", 0.05f);
+        settings.glowIntensity = ReadFloat(hKey, L"GlowIntensity", 0.3f);
+        settings.latinCharProbability = ReadFloat(hKey, L"LatinCharProbability", 0.15f);
+        settings.symbolCharProbability = ReadFloat(hKey, L"SymbolCharProbability", 0.05f);
+        settings.enableCharacterVariety = ReadBool(hKey, L"EnableCharacterVariety", true);
+        
         // Load custom messages
         std::wstring messagesStr = ReadString(hKey, L"CustomMessages", L"");
         if (!messagesStr.empty()) {
@@ -79,6 +114,41 @@ void SettingsManager::SaveSettings(const MatrixSettings& settings) {
         WriteFloat(hKey, L"FadeRate", settings.fadeRate);
         WriteString(hKey, L"MaskImagePath", settings.maskImagePath);
         WriteBool(hKey, L"UseMask", settings.useMask);
+        
+        // Performance optimization features
+        WriteBool(hKey, L"EnableBatchRendering", settings.enableBatchRendering);
+        WriteBool(hKey, L"EnableFrameRateLimiting", settings.enableFrameRateLimiting);
+        WriteDword(hKey, L"TargetFrameRate", static_cast<DWORD>(settings.targetFrameRate));
+        WriteBool(hKey, L"EnableAdaptiveVSync", settings.enableAdaptiveVSync);
+        WriteBool(hKey, L"ShowPerformanceMetrics", settings.showPerformanceMetrics);
+        WriteBool(hKey, L"EnableDirtyRectangles", settings.enableDirtyRectangles);
+        
+        // Advanced features
+        WriteBool(hKey, L"EnableLogging", settings.enableLogging);
+        WriteBool(hKey, L"EnableMotionBlur", settings.enableMotionBlur);
+        WriteBool(hKey, L"EnableParticleEffects", settings.enableParticleEffects);
+        WriteBool(hKey, L"EnableAudioVisualization", settings.enableAudioVisualization);
+        
+        // Quality settings
+        WriteBool(hKey, L"EnableHighQualityText", settings.enableHighQualityText);
+        WriteBool(hKey, L"EnableAntiAliasing", settings.enableAntiAliasing);
+        
+        // Visual enhancement features
+        WriteBool(hKey, L"EnableCharacterMorphing", settings.enableCharacterMorphing);
+        WriteBool(hKey, L"EnablePhosphorGlow", settings.enablePhosphorGlow);
+        WriteBool(hKey, L"EnableGlitchEffects", settings.enableGlitchEffects);
+        WriteBool(hKey, L"EnableRainVariations", settings.enableRainVariations);
+        WriteBool(hKey, L"EnableSystemDisruptions", settings.enableSystemDisruptions);
+        WriteBool(hKey, L"EnableMotionReduction", settings.enableMotionReduction);
+        
+        // Enhancement parameters
+        WriteFloat(hKey, L"MorphFrequency", settings.morphFrequency);
+        WriteFloat(hKey, L"MorphSpeed", settings.morphSpeed);
+        WriteFloat(hKey, L"GlitchFrequency", settings.glitchFrequency);
+        WriteFloat(hKey, L"GlowIntensity", settings.glowIntensity);
+        WriteFloat(hKey, L"LatinCharProbability", settings.latinCharProbability);
+        WriteFloat(hKey, L"SymbolCharProbability", settings.symbolCharProbability);
+        WriteBool(hKey, L"EnableCharacterVariety", settings.enableCharacterVariety);
         
         // Save custom messages
         std::wstring messagesStr;

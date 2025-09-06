@@ -24,6 +24,11 @@ set(SOURCES
     src/config_dialog.cpp
     src/settings_manager.cpp
     src/mask_loader.cpp
+    src/performance_metrics.cpp
+    src/batch_renderer.cpp
+    src/dirty_rect_manager.cpp
+    src/character_effects.cpp
+    src/logger.cpp
     src/MatrixScreensaver.rc
 )
 
@@ -33,6 +38,12 @@ set(HEADERS
     src/config_dialog.h
     src/settings_manager.h
     src/mask_loader.h
+    src/performance_metrics.h
+    src/batch_renderer.h
+    src/memory_pool.h
+    src/dirty_rect_manager.h
+    src/character_effects.h
+    src/logger.h
     src/common.h
     src/resource.h
 )

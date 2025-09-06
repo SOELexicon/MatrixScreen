@@ -1,6 +1,7 @@
 #include "common.h"
 #include "matrix_screensaver.h"
 #include "config_dialog.h"
+#include "logger.h"
 #include <windowsx.h>
 
 std::mt19937 g_rng(static_cast<unsigned int>(std::chrono::steady_clock::now().time_since_epoch().count()));
@@ -120,8 +121,11 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             
             g_screensaver = std::make_unique<MatrixScreensaver>();
             if (!g_screensaver->Initialize(hwnd)) {
+                LOG_ERROR("Failed to initialize screensaver");
                 return -1;
             }
+            
+            LOG_INFO("Screensaver initialized successfully");
             
             // Set up timer for animation
             SetTimer(hwnd, 1, 16, nullptr); // ~60 FPS
@@ -218,27 +222,4 @@ bool IsMouseMoved(const POINT& initial, const POINT& current, int threshold) {
     return (deltaX > threshold || deltaY > threshold);
 }
 
-// Color utility implementation
-Color Color::FromHSV(float h, float s, float v, float a) {
-    float c = v * s;
-    float x = c * (1.0f - abs(fmod(h * 6.0f, 2.0f) - 1.0f));
-    float m = v - c;
-    
-    float r, g, b;
-    
-    if (h < 1.0f / 6.0f) {
-        r = c; g = x; b = 0;
-    } else if (h < 2.0f / 6.0f) {
-        r = x; g = c; b = 0;
-    } else if (h < 3.0f / 6.0f) {
-        r = 0; g = c; b = x;
-    } else if (h < 4.0f / 6.0f) {
-        r = 0; g = x; b = c;
-    } else if (h < 5.0f / 6.0f) {
-        r = x; g = 0; b = c;
-    } else {
-        r = c; g = 0; b = x;
-    }
-    
-    return Color(r + m, g + m, b + m, a);
-}
+// Color utility implementation is now in common.h as inline method
