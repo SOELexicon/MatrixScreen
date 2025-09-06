@@ -185,7 +185,8 @@ void CharacterEffects::UpdateGlow(GridCell& cell, float deltaTime) {
     
     // Set glow color based on character properties
     if (cell.glowIntensity > 0.0f) {
-        Color baseColor = Color(0.0f, 1.0f, 0.0f, cell.glowIntensity);
+        // Use hue from settings instead of hardcoded green
+        Color baseColor = Color::FromHSV(m_settings.hue, 0.8f, 0.9f, cell.glowIntensity);
         
         // Modify color based on character type
         if (cell.isGlitching) {

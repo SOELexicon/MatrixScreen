@@ -283,6 +283,16 @@ void MatrixRenderer::CreateDensityMap() {
 
 Color MatrixRenderer::GetMatrixColor() const {
     // Base matrix color with configurable hue
+    // Debug: Log the hue value and resulting color
+    static float lastLoggedHue = -1.0f;
+    if (std::abs(m_settings.hue - lastLoggedHue) > 0.1f) {
+        Color result = Color::FromHSV(m_settings.hue, 0.8f, 0.9f, 1.0f);
+        LOG_DEBUG("Using hue: " + std::to_string(m_settings.hue) + 
+                 " -> RGB(" + std::to_string(result.r) + "," + 
+                 std::to_string(result.g) + "," + std::to_string(result.b) + ")");
+        lastLoggedHue = m_settings.hue;
+    }
+    
     return Color::FromHSV(m_settings.hue, 0.8f, 0.9f, 1.0f);
 }
 
@@ -318,14 +328,24 @@ Color MatrixRenderer::GetDepthColor(float depth, float alpha) const {
     
     // Special handling for head characters (very bright alpha)
     if (m_settings.whiteHeadCharacters && alpha > 0.95f) {
-        // Head characters get white/bright tint
-        return Color(0.8f, 1.0f, 0.8f, alpha);
+        // Head characters get white/bright tint but still respect hue
+        Color headColor = GetMatrixColor();
+        // Make it brighter and add white tint
+        headColor.r = std::min(1.0f, headColor.r + 0.3f);
+        headColor.g = std::min(1.0f, headColor.g + 0.3f);
+        headColor.b = std::min(1.0f, headColor.b + 0.3f);
+        headColor.a = alpha;
+        return headColor;
     }
     
     // Apply 3D depth effect if enabled
     if (m_settings.enable3DEffect) {
+        // Apply depth range scaling (higher depthRange = more dramatic effect)
+        float scaledDepth = 0.5f + (depth - 0.5f) * (m_settings.depthRange / 5.0f);
+        scaledDepth = std::max(0.0f, std::min(1.0f, scaledDepth));
+        
         // Closer objects (higher depth) are brighter
-        float brightness = 0.3f + (depth * 0.7f);
+        float brightness = 0.3f + (scaledDepth * 0.7f);
         baseColor.r *= brightness;
         baseColor.g *= brightness; 
         baseColor.b *= brightness;
@@ -638,12 +658,21 @@ void MatrixRenderer::RenderColumns() {
             headChar = MATRIX_CHARS[charDist(g_rng)];
         }
         
-        // Set color for head based on settings
+        // Set color for head based on settings and current hue
         if (m_settings.whiteHeadCharacters) {
-            m_whiteBrush->SetColor(D2D1::ColorF(D2D1::ColorF::White, 1.0f));
+            Color headColor = GetMatrixColor();
+            // Make it brighter and add white tint
+            headColor.r = std::min(1.0f, headColor.r + 0.4f);
+            headColor.g = std::min(1.0f, headColor.g + 0.4f);
+            headColor.b = std::min(1.0f, headColor.b + 0.4f);
+            m_whiteBrush->SetColor(headColor.ToD2D1());
         } else {
-            // Use bright green for heads instead of white
-            m_whiteBrush->SetColor(D2D1::ColorF(0.0f, 1.0f, 0.0f, 1.0f));
+            // Use bright version of current hue for heads
+            Color headColor = GetMatrixColor();
+            headColor.r = std::min(1.0f, headColor.r * 1.2f);
+            headColor.g = std::min(1.0f, headColor.g * 1.2f);
+            headColor.b = std::min(1.0f, headColor.b * 1.2f);
+            m_whiteBrush->SetColor(headColor.ToD2D1());
         }
         
         // Create layout rect
@@ -742,7 +771,7 @@ void MatrixRenderer::RenderOptimized() {
             // Immediate rendering with glow effect
             if (m_settings.enablePhosphorGlow && cell.glowIntensity > 0.0f) {
                 // Render glow first (slightly larger and more transparent)
-                Color glowColor = m_characterEffects ? m_characterEffects->GetGlowColor(cell) : Color(0.0f, 1.0f, 0.0f, cell.glowIntensity * 0.5f);
+                Color glowColor = m_characterEffects ? m_characterEffects->GetGlowColor(cell) : GetMatrixColor();
                 glowColor.a *= 0.5f;
                 
                 D2D1_RECT_F glowRect = D2D1::RectF(
@@ -867,6 +896,15 @@ void MatrixRenderer::UpdateSettings(const MatrixSettings& settings) {
     if (m_greenBrush) {
         Color matrixColor = GetMatrixColor();
         m_greenBrush->SetColor(matrixColor.ToD2D1());
+    }
+    
+    // Update other brushes to maintain color consistency
+    if (m_whiteBrush) {
+        Color headColor = GetMatrixColor();
+        headColor.r = std::min(1.0f, headColor.r + 0.3f);
+        headColor.g = std::min(1.0f, headColor.g + 0.3f);
+        headColor.b = std::min(1.0f, headColor.b + 0.3f);
+        m_whiteBrush->SetColor(headColor.ToD2D1());
     }
     
     // Update character effects settings
