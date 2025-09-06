@@ -94,6 +94,7 @@ struct MatrixSettings {
     float latinCharProbability = 0.15f; // 15% chance of Latin chars
     float symbolCharProbability = 0.05f; // 5% chance of symbols
     bool enableCharacterVariety = true; // Use expanded character set
+    bool variableLeadSize = false; // Make lead characters larger than trail (default OFF)
 };
 
 // Color utilities

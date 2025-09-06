@@ -18,6 +18,7 @@ private:
     void SaveSettingsFromDialog(HWND hDlg);
     void OnCommand(HWND hDlg, WPARAM wParam, LPARAM lParam);
     void OnHScroll(HWND hDlg, WPARAM wParam, LPARAM lParam);
+    BOOL OnDrawItem(HWND hDlg, WPARAM wParam, LPARAM lParam);
     void UpdatePreview(HWND hDlg);
     void BrowseForMaskImage(HWND hDlg);
     

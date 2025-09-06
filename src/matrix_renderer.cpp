@@ -430,8 +430,44 @@ void MatrixRenderer::UpdateColumns(float deltaTime) {
                     cell.character = MATRIX_CHARS[charDist(g_rng)];
                 }
                 
-                cell.alpha = 1.0f; // Start bright
-                cell.fontSize = m_settings.fontSize * (0.7f + depth * 0.6f); // Depth-based size
+                // Calculate alpha based on distance from column head
+                float distanceFromHead = column.y - (gridY * m_settings.fontSize * 0.9f);
+                if (distanceFromHead < m_settings.fontSize * 1.5f) {
+                    // Very close to head - bright
+                    cell.alpha = 1.0f;
+                } else if (distanceFromHead < m_settings.fontSize * 3.0f) {
+                    // Near head - medium bright
+                    cell.alpha = 0.7f;
+                } else if (distanceFromHead < m_settings.fontSize * 5.0f) {
+                    // Behind head - dimmer
+                    cell.alpha = 0.4f;
+                } else {
+                    // Far behind - dim
+                    cell.alpha = 0.2f;
+                }
+                
+                // Calculate font size
+                float baseFontSize = m_settings.fontSize;
+                float sizeMultiplier = 1.0f;
+                
+                if (m_settings.variableLeadSize) {
+                    // Variable lead size enabled - make lead characters larger
+                    if (cell.alpha >= 0.95f) {
+                        // Lead character - make it 40-60% larger based on depth
+                        sizeMultiplier = 1.4f + depth * 0.2f;
+                    } else if (cell.alpha >= 0.7f) {
+                        // Near lead - slightly larger
+                        sizeMultiplier = 1.2f + depth * 0.1f;
+                    } else {
+                        // Trail characters - normal depth-based sizing
+                        sizeMultiplier = 0.7f + depth * 0.6f;
+                    }
+                } else {
+                    // Uniform sizing based on depth only
+                    sizeMultiplier = 0.7f + depth * 0.6f;
+                }
+                
+                cell.fontSize = baseFontSize * sizeMultiplier;
                 cell.depth = depth;
                 cell.isActive = true;
                 
@@ -474,6 +510,46 @@ void MatrixRenderer::UpdateGrid(float deltaTime) {
         
         // Update character effects
         if (m_characterEffects) {
+            // For bright head characters, update them differently
+            if (cell.alpha > 0.8f) {
+                // Look for the cell below this one to inherit its character
+                int nextY = y + 1;
+                uint64_t nextKey = PackCoords(x, nextY);
+                auto nextCellIt = m_sparseGrid.find(nextKey);
+                
+                if (nextCellIt != m_sparseGrid.end() && nextCellIt->second.alpha > 0.1f) {
+                    // Lead character shows what's coming next in the trail
+                    cell.character = nextCellIt->second.character;
+                } else {
+                    // No cell below or it's too faint - generate new character occasionally
+                    float headChangeRate = 2.0f; // Changes per second (reduced from 5.0f)
+                    if (std::uniform_real_distribution<float>(0.0f, 1.0f)(g_rng) < headChangeRate * deltaTime) {
+                        if (m_settings.useCustomWord && !m_settings.customWord.empty()) {
+                            int charIndex = std::uniform_int_distribution<int>(0, static_cast<int>(m_settings.customWord.length()) - 1)(g_rng);
+                            cell.character = m_settings.customWord.substr(charIndex, 1);
+                        } else {
+                            cell.character = m_characterEffects->SelectCharacter(cell.depth, m_settings.enableCharacterVariety);
+                        }
+                    }
+                }
+                
+                // Update font size for lead characters if variable sizing is enabled
+                if (m_settings.variableLeadSize) {
+                    float baseFontSize = m_settings.fontSize;
+                    if (cell.alpha >= 0.95f) {
+                        cell.fontSize = baseFontSize * (1.4f + cell.depth * 0.2f);
+                    } else if (cell.alpha >= 0.7f) {
+                        cell.fontSize = baseFontSize * (1.2f + cell.depth * 0.1f);
+                    }
+                } else {
+                    // Use uniform sizing based on depth
+                    cell.fontSize = m_settings.fontSize * (0.7f + cell.depth * 0.6f);
+                }
+            } else {
+                // Trail characters - ensure they have proper sizing
+                cell.fontSize = m_settings.fontSize * (0.7f + cell.depth * 0.6f);
+            }
+            
             // Start morphing occasionally
             m_characterEffects->StartMorphing(cell, m_settings.morphFrequency * deltaTime);
             m_characterEffects->UpdateMorphing(cell, deltaTime);

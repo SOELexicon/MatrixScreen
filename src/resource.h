@@ -43,6 +43,7 @@
 #define IDC_ENABLE_ANTI_ALIASING      1033
 
 // Visual enhancement controls
+#define IDC_VARIABLE_LEAD_SIZE         1036
 #define IDC_ENABLE_CHARACTER_MORPHING 1037
 #define IDC_ENABLE_PHOSPHOR_GLOW      1038
 #define IDC_ENABLE_GLITCH_EFFECTS     1039
@@ -56,6 +57,9 @@
 #define IDC_GLOW_INTENSITY_SLIDER     1047
 #define IDC_LATIN_CHAR_PROB_SLIDER    1048
 #define IDC_SYMBOL_CHAR_PROB_SLIDER   1049
+
+// Color preview panel
+#define IDC_COLOR_PREVIEW_PANEL       1054
 
 // Group boxes for organization
 #define IDC_PERFORMANCE_GROUP         1050

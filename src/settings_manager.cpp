@@ -69,6 +69,7 @@ MatrixSettings SettingsManager::LoadSettings() {
         settings.latinCharProbability = ReadFloat(hKey, L"LatinCharProbability", 0.15f);
         settings.symbolCharProbability = ReadFloat(hKey, L"SymbolCharProbability", 0.05f);
         settings.enableCharacterVariety = ReadBool(hKey, L"EnableCharacterVariety", true);
+        settings.variableLeadSize = ReadBool(hKey, L"VariableLeadSize", false);
         
         // Load custom messages
         std::wstring messagesStr = ReadString(hKey, L"CustomMessages", L"");
@@ -149,6 +150,7 @@ void SettingsManager::SaveSettings(const MatrixSettings& settings) {
         WriteFloat(hKey, L"LatinCharProbability", settings.latinCharProbability);
         WriteFloat(hKey, L"SymbolCharProbability", settings.symbolCharProbability);
         WriteBool(hKey, L"EnableCharacterVariety", settings.enableCharacterVariety);
+        WriteBool(hKey, L"VariableLeadSize", settings.variableLeadSize);
         
         // Save custom messages
         std::wstring messagesStr;

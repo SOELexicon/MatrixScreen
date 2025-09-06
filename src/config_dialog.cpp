@@ -42,6 +42,12 @@ INT_PTR CALLBACK ConfigDialog::DialogProc(HWND hDlg, UINT message, WPARAM wParam
         }
         return TRUE;
         
+    case WM_DRAWITEM:
+        if (pThis) {
+            return pThis->OnDrawItem(hDlg, wParam, lParam);
+        }
+        return FALSE;
+        
     case WM_CLOSE:
         EndDialog(hDlg, IDCANCEL);
         return TRUE;
@@ -142,9 +148,13 @@ void ConfigDialog::LoadSettingsToDialog(HWND hDlg) {
     CheckDlgButton(hDlg, IDC_ENABLE_HIGH_QUALITY_TEXT, m_settings.enableHighQualityText ? BST_CHECKED : BST_UNCHECKED);
     CheckDlgButton(hDlg, IDC_ENABLE_ANTI_ALIASING, m_settings.enableAntiAliasing ? BST_CHECKED : BST_UNCHECKED);
     
+    // Trigger initial color preview update
+    InvalidateRect(GetDlgItem(hDlg, IDC_COLOR_PREVIEW_PANEL), nullptr, TRUE);
+    
     // Visual enhancement features (all OFF by default)
     CheckDlgButton(hDlg, IDC_ENABLE_CHARACTER_MORPHING, m_settings.enableCharacterMorphing ? BST_CHECKED : BST_UNCHECKED);
     CheckDlgButton(hDlg, IDC_ENABLE_PHOSPHOR_GLOW, m_settings.enablePhosphorGlow ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(hDlg, IDC_VARIABLE_LEAD_SIZE, m_settings.variableLeadSize ? BST_CHECKED : BST_UNCHECKED);
     CheckDlgButton(hDlg, IDC_ENABLE_GLITCH_EFFECTS, m_settings.enableGlitchEffects ? BST_CHECKED : BST_UNCHECKED);
     CheckDlgButton(hDlg, IDC_ENABLE_RAIN_VARIATIONS, m_settings.enableRainVariations ? BST_CHECKED : BST_UNCHECKED);
     CheckDlgButton(hDlg, IDC_ENABLE_SYSTEM_DISRUPTIONS, m_settings.enableSystemDisruptions ? BST_CHECKED : BST_UNCHECKED);
@@ -229,6 +239,7 @@ void ConfigDialog::SaveSettingsFromDialog(HWND hDlg) {
     // Visual enhancement features
     m_settings.enableCharacterMorphing = IsDlgButtonChecked(hDlg, IDC_ENABLE_CHARACTER_MORPHING) == BST_CHECKED;
     m_settings.enablePhosphorGlow = IsDlgButtonChecked(hDlg, IDC_ENABLE_PHOSPHOR_GLOW) == BST_CHECKED;
+    m_settings.variableLeadSize = IsDlgButtonChecked(hDlg, IDC_VARIABLE_LEAD_SIZE) == BST_CHECKED;
     m_settings.enableGlitchEffects = IsDlgButtonChecked(hDlg, IDC_ENABLE_GLITCH_EFFECTS) == BST_CHECKED;
     m_settings.enableRainVariations = IsDlgButtonChecked(hDlg, IDC_ENABLE_RAIN_VARIATIONS) == BST_CHECKED;
     m_settings.enableSystemDisruptions = IsDlgButtonChecked(hDlg, IDC_ENABLE_SYSTEM_DISRUPTIONS) == BST_CHECKED;
@@ -279,7 +290,41 @@ void ConfigDialog::OnCommand(HWND hDlg, WPARAM wParam, LPARAM lParam) {
 void ConfigDialog::OnHScroll(HWND hDlg, WPARAM wParam, LPARAM lParam) {
     UNREFERENCED_PARAMETER(wParam);
     UNREFERENCED_PARAMETER(lParam);
+    
+    // Update the color preview when hue slider changes
+    InvalidateRect(GetDlgItem(hDlg, IDC_COLOR_PREVIEW_PANEL), nullptr, TRUE);
+    UpdateWindow(GetDlgItem(hDlg, IDC_COLOR_PREVIEW_PANEL));
+    
     UpdatePreview(hDlg);
+}
+
+BOOL ConfigDialog::OnDrawItem(HWND hDlg, WPARAM wParam, LPARAM lParam) {
+    LPDRAWITEMSTRUCT lpDrawItem = (LPDRAWITEMSTRUCT)lParam;
+    
+    if (lpDrawItem->CtlID == IDC_COLOR_PREVIEW_PANEL) {
+        // Get current hue value from slider
+        float currentHue = static_cast<float>(SendDlgItemMessage(hDlg, IDC_HUE_SLIDER, TBM_GETPOS, 0, 0));
+        
+        // Convert HSV to RGB using the same method as the screensaver
+        Color matrixColor = Color::FromHSV(currentHue, 0.8f, 0.9f, 1.0f);
+        
+        // Create a solid brush with the matrix color
+        HBRUSH hBrush = CreateSolidBrush(RGB(
+            static_cast<int>(matrixColor.r * 255),
+            static_cast<int>(matrixColor.g * 255),
+            static_cast<int>(matrixColor.b * 255)
+        ));
+        
+        // Fill the rectangle with the color
+        FillRect(lpDrawItem->hDC, &lpDrawItem->rcItem, hBrush);
+        
+        // Clean up
+        DeleteObject(hBrush);
+        
+        return TRUE;
+    }
+    
+    return FALSE;
 }
 
 void ConfigDialog::UpdatePreview(HWND hDlg) {
